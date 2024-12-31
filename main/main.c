@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <stdio.h>
+#include <math.h>
 #include "arch/sys_arch.h"
 #include "driver/i2c.h"
 #include "esp_log.h"
@@ -26,6 +27,7 @@
 //ultrasonic Configuration
 #define TRIG_PIN GPIO_NUM_5
 #define ECHO_PIN GPIO_NUM_18
+#define DISTANCE_BUFFER_SIZE 5
 
 // DS18B20 Configuration
 #define DS18B20_GPIO GPIO_NUM_4           // DS18B20 data pin
@@ -186,12 +188,42 @@ void toggle_buzzer(bool state) {
     gpio_set_level(BUZZER_PIN, state ? 1 : 0);
 }
 
+float distance_buffer[DISTANCE_BUFFER_SIZE];
+int buffer_index = 0;
+
+void add_to_buffer(float distance) {
+    distance_buffer[buffer_index] = distance;
+    buffer_index = (buffer_index + 1) % DISTANCE_BUFFER_SIZE;
+}
+
+float get_average_distance() {
+    float sum = 0.0;
+    for (int i = 0; i < DISTANCE_BUFFER_SIZE; i++) {
+        sum += distance_buffer[i];
+    }
+    return sum / DISTANCE_BUFFER_SIZE;
+}
+
+float validate_distance(float current_distance, float previous_distance) {
+    if (current_distance < 2.0 || current_distance >400.0) {
+        return -1.0; // Invalid range
+    }
+    if (fabs(current_distance - previous_distance) > 20.0) {
+        return previous_distance; // Ignore sudden spikes
+    }
+    return current_distance;
+}
 
 
 
 // Distance Task
 void distance_task(void *pvParameters) {
-    float distance = 0.0;
+    float distance = 0.0, previous_distance = 0.0;
+
+    // Initialize buffer for averaging
+    for (int i = 0; i < DISTANCE_BUFFER_SIZE; i++) {
+        distance_buffer[i] = 0.0;
+    }
 
     while (1) {
         // Trigger the ultrasonic sensor
@@ -201,41 +233,50 @@ void distance_task(void *pvParameters) {
         // Calculate the distance
         distance = calculate_distance();
         if (distance == -1.0) {
+            ESP_LOGW(TAG, "Invalid distance reading!");
             continue; // Skip if invalid
         }
 
-        ESP_LOGI(TAG, "Raw Distance: %.2f cm", distance);
-
-        if (distance > 0 && distance < 18.0) {
-            strncpy(dist_display_status, "FULL!!", sizeof(dist_display_status));
+        // Validate and filter the distance
+        distance = validate_distance(distance, previous_distance);
+        if (distance == -1.0) {
+			strncpy(dist_display_status, "FULL!!", sizeof(dist_display_status));
             strncpy(dist_display, "0", sizeof(dist_display));
-            distance_alert_active = false; // No alert for below min
-        } else if (distance >= 18.0 && distance <= 100.0) {
-			
-			snprintf(dist_display, sizeof(dist_display), "-%d", (int)(distance- 18));
-			
-            //snprintf(dist_display, sizeof(dist_display), "DIST: %.2f CM", distance);
-            
-           // strncpy(dist_display_status, "GOOD", sizeof(dist_display_status));
-            // Activate alert if distance > 27.0
-            
-            if((int)distance > 23)
-            {
-			distance_alert_active = true;	
-			strncpy(dist_display_status, "LOW!!", sizeof(dist_display_status));
-			}else 
-			{
-				distance_alert_active = false;
-			strncpy(dist_display_status, "GOOD", sizeof(dist_display_status));
-			}
-        } else {
-            //strncpy(dist_display_status, "TOO LOW", sizeof(dist_display_status));
-            distance_alert_active = false; // No alert for out-of-range
+            ESP_LOGW(TAG, "Filtered out spurious distance reading!");
+            continue; // Skip spurious readings
         }
 
-        vTaskDelay(pdMS_TO_TICKS(100)); // Prevent excessive updates
+        previous_distance = distance;
+
+        // Add to buffer and calculate average
+        add_to_buffer(distance);
+        float average_distance = get_average_distance();
+
+        // Log and display the distance
+        ESP_LOGI(TAG, "Average Distance: %.2f cm", average_distance);
+
+        // Update display and alert logic
+        if (average_distance > 0 && average_distance < 18.0) {
+            strncpy(dist_display_status, "FULL!!", sizeof(dist_display_status));
+            strncpy(dist_display, "0", sizeof(dist_display));
+            distance_alert_active = false;
+        } else if (average_distance >= 18.0 && average_distance <= 100.0) {
+            snprintf(dist_display, sizeof(dist_display), "-%d", (int)(average_distance - 18));
+            if ((int)average_distance > 23) {
+                distance_alert_active = true;
+                strncpy(dist_display_status, "LOW!!", sizeof(dist_display_status));
+            } else {
+                distance_alert_active = false;
+                strncpy(dist_display_status, "GOOD", sizeof(dist_display_status));
+            }
+        } else {
+            distance_alert_active = false; // Out of range
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100)); // Control update rate
     }
 }
+
 
 
 
