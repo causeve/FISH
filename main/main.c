@@ -11,7 +11,7 @@
 #include "freertos/queue.h"
 #include <ds18x20.h>// For esp-idf-lib
 #include "oled.h"
-#define ENABLE_LOGGING 0 // Set to 0 to disable logging
+#define ENABLE_LOGGING 1 // Set to 0 to disable logging
 
 
 
@@ -27,7 +27,7 @@
 //ultrasonic Configuration
 #define TRIG_PIN GPIO_NUM_5
 #define ECHO_PIN GPIO_NUM_18
-#define DISTANCE_BUFFER_SIZE 5
+#define DISTANCE_BUFFER_SIZE 20
 
 // DS18B20 Configuration
 #define DS18B20_GPIO GPIO_NUM_4           // DS18B20 data pin
@@ -60,7 +60,7 @@ volatile bool temperature_alert_active = false;
  char temp_display[5] = "--";
  char temp_fractional[5]=".--";
  char dist_display[16] = "--";
- char dist_display_status[16] = "GOOD -_-";
+ char dist_display_status[16] = "--";
 
 
 // Prepare UART buffer
@@ -191,6 +191,7 @@ void toggle_buzzer(bool state) {
 float distance_buffer[DISTANCE_BUFFER_SIZE];
 int buffer_index = 0;
 
+
 void add_to_buffer(float distance) {
     distance_buffer[buffer_index] = distance;
     buffer_index = (buffer_index + 1) % DISTANCE_BUFFER_SIZE;
@@ -208,9 +209,12 @@ float validate_distance(float current_distance, float previous_distance) {
     if (current_distance < 2.0 || current_distance >400.0) {
         return -1.0; // Invalid range
     }
+    
+    /*
     if (fabs(current_distance - previous_distance) > 20.0) {
         return previous_distance; // Ignore sudden spikes
     }
+    */
     return current_distance;
 }
 
@@ -240,7 +244,7 @@ void distance_task(void *pvParameters) {
         // Validate and filter the distance
         distance = validate_distance(distance, previous_distance);
         if (distance == -1.0) {
-			strncpy(dist_display_status, "FULL!!", sizeof(dist_display_status));
+			strncpy(dist_display_status, "FULL", sizeof(dist_display_status));
             strncpy(dist_display, "0", sizeof(dist_display));
             ESP_LOGW(TAG, "Filtered out spurious distance reading!");
             continue; // Skip spurious readings
@@ -251,7 +255,7 @@ void distance_task(void *pvParameters) {
         // Add to buffer and calculate average
         add_to_buffer(distance);
         float average_distance = get_average_distance();
-
+        
         // Log and display the distance
         ESP_LOGI(TAG, "Average Distance: %.2f cm", average_distance);
 
@@ -292,10 +296,10 @@ void temperature_task(void *pvParameters) {
             snprintf(temp_fractional, sizeof(temp_fractional), ".%02d", (int)(fractional_part * 100));
             snprintf(temp_display, sizeof(temp_display), "%d", integer_part);
 
-            temperature_alert_active = (temp >= 30.0);
+            temperature_alert_active = (temp >= 32.0);
         } else {
             ESP_LOGE(TAG, "Invalid temperature reading!");
-            strncpy(temp_display, "N/A", sizeof(temp_display));
+            strncpy(temp_display, "--", sizeof(temp_display));
             strncpy(temp_fractional, ".00", sizeof(temp_fractional));
             // Reinitialize DS18B20 if reading fails repeatedly
             init_ds18b20();
