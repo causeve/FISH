@@ -397,12 +397,50 @@ void print_Water_level_oled(void)
 	
 }
 
+void CalibMode_Water_level_oled(void)
+{
+	 ssd1306_clear();
+	ssd1306_draw_scaled_string(5, 0, &"Set water Level", 1);
+    ssd1306_draw_scaled_string(10, 10, &dist_display, 5);
+    ssd1306_draw_scaled_string(5, 50, "should be > 2cm", 1);
+    ssd1306_display();
+	
+}
+
+
 void Print_logo_diplay(void)
 {
 	 ssd1306_clear();
 	 ssd1306_draw_scaled_string(30, 0, &"ENV MONITOR", 1);
 	 ssd1306_draw_scaled_string(10, 15, &"Yoogi", 4);
 	     ssd1306_draw_scaled_string(70, 50, &"By Cuaseve", 1);
+	 ssd1306_display();
+	
+	
+}
+
+void base_distance_diplay_oled(float base_distance)
+{
+	char temp[5];
+	snprintf(temp, sizeof(temp), "%d", (int)base_distance);
+	 ssd1306_clear();
+	 ssd1306_draw_scaled_string(30, 0, &"Base DIST", 1);
+	 ssd1306_draw_scaled_string(10, 20, &temp, 5);
+	    ssd1306_draw_scaled_string(90, 50, "cm", 2);
+	 ssd1306_display();
+	
+	
+}
+
+
+void Clear_NVM_Display_oled(void)
+{
+	 ssd1306_clear();
+	 
+	 ssd1306_draw_scaled_string(10, 20, &"NVM Cleard", 2);
+	 
+	 ssd1306_draw_scaled_string(10, 40, &"Restarting..", 2);
+	    
 	 ssd1306_display();
 	
 	

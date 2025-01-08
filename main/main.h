@@ -16,6 +16,18 @@
 #define BLINDSPOT 2.0  // 2 cm Blind spot
 #define MAX_DIST_MESUR 100.0  //100cm
 
+//#define LONG_PRESS_THRESHOLD_MS 4000 // Long press: 4 seconds
+
+#define DEBOUNCE_DELAY_MS 50 // 50 ms debounce time
+
+
+typedef enum {
+    NORMAL_MODE,
+    CALIBRATION_MODE,
+    NONE
+} SystemState;
+
+extern SystemState current_state;
 
 // Shared Display Data Structure
 extern  char temp_display[TEMP_BUFFER_SIZE];

@@ -27,5 +27,8 @@ void ssd1306_clear(void);
 void print_Water_level_oled(void);
 void print_temp_oled(void);
 void toggle_invert_display(bool invert);
+void CalibMode_Water_level_oled(void);
+void base_distance_diplay_oled(float base_distance);
 
+void Clear_NVM_Display_oled(void);
 #endif // OLED_DISPLAY_H
