@@ -11,6 +11,7 @@
 #include "freertos/queue.h"
 #include <ds18x20.h>// For esp-idf-lib
 #include "oled.h"
+#include "main.h"
 #define ENABLE_LOGGING 1 // Set to 0 to disable logging
 
 
@@ -57,10 +58,10 @@ volatile bool distance_alert_active = false;
 volatile bool temperature_alert_active = false;
 
 // Shared Display Data Structure
- char temp_display[5] = "--";
- char temp_fractional[5]=".--";
- char dist_display[16] = "--";
- char dist_display_status[16] = "--";
+ char temp_display[TEMP_BUFFER_SIZE] = "--";
+ char temp_fractional[TEMP_FRAC_BUFFER_SIZE]=".--";
+ char dist_display[DIST_BUFFER_SIZE] = "--";
+ char dist_display_status[DIST_STATUS_BUFFER_SIZE] = "--";
 
 
 // Prepare UART buffer
@@ -260,13 +261,14 @@ void distance_task(void *pvParameters) {
         ESP_LOGI(TAG, "Average Distance: %.2f cm", average_distance);
 
         // Update display and alert logic
-        if (average_distance > 0 && average_distance < 18.0) {
+        if (average_distance > 0 && average_distance < BLINDSPOT) {
             strncpy(dist_display_status, "FULL!!", sizeof(dist_display_status));
             strncpy(dist_display, "0", sizeof(dist_display));
             distance_alert_active = false;
-        } else if (average_distance >= 18.0 && average_distance <= 100.0) {
-            snprintf(dist_display, sizeof(dist_display), "-%d", (int)(average_distance - 18));
-            if ((int)average_distance > 23) {
+        } else if (average_distance >= BLINDSPOT && average_distance <= MAX_DIST_MESUR) {
+            snprintf(dist_display, sizeof(dist_display), "-%d", (int)(average_distance));
+            
+            if ((int)average_distance > (BLINDSPOT + 5)) {
                 distance_alert_active = true;
                 strncpy(dist_display_status, "LOW!!", sizeof(dist_display_status));
             } else {
