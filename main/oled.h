@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "esp_log.h"
+
 
 
 // OLED Configuration
@@ -31,4 +31,5 @@ void CalibMode_Water_level_oled(void);
 void base_distance_diplay_oled(float base_distance);
 
 void Clear_NVM_Display_oled(void);
+void oled_refresh_task(void *pvParameters);
 #endif // OLED_DISPLAY_H

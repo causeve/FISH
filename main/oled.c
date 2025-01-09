@@ -2,6 +2,9 @@
 #include "driver/i2c.h"
 #include <string.h>
 #include <main.h>
+#include "esp_log.h"
+#include "temperature.h"
+#include "distance.h"
 
 static const char *TAG = "oled";
 
@@ -376,10 +379,10 @@ void toggle_invert_display(bool invert) {
 void print_temp_oled(void)
 {
 	 ssd1306_clear();
-	 ssd1306_draw_scaled_string(30, 0, &"Temperature", 1);
-    ssd1306_draw_scaled_string(0, 20, &temp_display, 5);
+	 ssd1306_draw_scaled_string(30, 0, "Temperature", 1);
+    ssd1306_draw_scaled_string(0, 20, temp_display, 5);
     ssd1306_draw_scaled_bitmap(80, 20, degree_symbol, 5, 7,2); // Degree symbol at (30, 2)
-    ssd1306_draw_scaled_string(60, 50, &temp_fractional, 2);
+    ssd1306_draw_scaled_string(60, 50, temp_fractional, 2);
     ssd1306_draw_scaled_string(100, 20, "C", 5);
     ssd1306_display();
 	
@@ -389,9 +392,9 @@ void print_temp_oled(void)
 void print_Water_level_oled(void)
 {
 	 ssd1306_clear();
-	ssd1306_draw_scaled_string(30, 0, &"Water Level", 1);
-	ssd1306_draw_scaled_string(0, 20, &dist_display_status, 4);
-    ssd1306_draw_scaled_string(60, 50, &dist_display, 2);
+	ssd1306_draw_scaled_string(30, 0, "Water Level", 1);
+	ssd1306_draw_scaled_string(0, 20, dist_display_status, 4);
+    ssd1306_draw_scaled_string(60, 50, dist_display, 2);
     ssd1306_draw_scaled_string(90, 50, "cm", 2);
     ssd1306_display();
 	
@@ -400,8 +403,8 @@ void print_Water_level_oled(void)
 void CalibMode_Water_level_oled(void)
 {
 	 ssd1306_clear();
-	ssd1306_draw_scaled_string(5, 0, &"Set water Level", 1);
-    ssd1306_draw_scaled_string(10, 10, &dist_display, 5);
+	ssd1306_draw_scaled_string(5, 0, "Set water Level", 1);
+    ssd1306_draw_scaled_string(10, 10, dist_display, 5);
     ssd1306_draw_scaled_string(5, 50, "should be > 2cm", 1);
     ssd1306_display();
 	
@@ -411,9 +414,9 @@ void CalibMode_Water_level_oled(void)
 void Print_logo_diplay(void)
 {
 	 ssd1306_clear();
-	 ssd1306_draw_scaled_string(30, 0, &"ENV MONITOR", 1);
-	 ssd1306_draw_scaled_string(10, 15, &"Yoogi", 4);
-	     ssd1306_draw_scaled_string(70, 50, &"By Cuaseve", 1);
+	 ssd1306_draw_scaled_string(30, 0, "ENV MONITOR", 1);
+	 ssd1306_draw_scaled_string(10, 15, "Yoogi", 4);
+	     ssd1306_draw_scaled_string(70, 50, "By Cuaseve", 1);
 	 ssd1306_display();
 	
 	
@@ -424,8 +427,8 @@ void base_distance_diplay_oled(float base_distance)
 	char temp[5];
 	snprintf(temp, sizeof(temp), "%d", (int)base_distance);
 	 ssd1306_clear();
-	 ssd1306_draw_scaled_string(30, 0, &"Base DIST", 1);
-	 ssd1306_draw_scaled_string(10, 20, &temp, 5);
+	 ssd1306_draw_scaled_string(30, 0, "Base DIST", 1);
+	 ssd1306_draw_scaled_string(10, 20, temp, 5);
 	    ssd1306_draw_scaled_string(90, 50, "cm", 2);
 	 ssd1306_display();
 	
@@ -437,9 +440,9 @@ void Clear_NVM_Display_oled(void)
 {
 	 ssd1306_clear();
 	 
-	 ssd1306_draw_scaled_string(10, 20, &"NVM Cleard", 2);
+	 ssd1306_draw_scaled_string(10, 20, "NVM Cleard", 2);
 	 
-	 ssd1306_draw_scaled_string(10, 40, &"Restarting..", 2);
+	 ssd1306_draw_scaled_string(10, 40, "Restarting..", 2);
 	    
 	 ssd1306_display();
 	
@@ -497,4 +500,44 @@ void ssd1306_init(void) {
     ssd1306_send_command(0x14);
     ssd1306_send_command(0xAF); // Display ON
     memset(ssd1306_buffer, 0, sizeof(ssd1306_buffer));
+}
+
+void oled_refresh_task(void *pvParameters) {
+    static signed char count = 0;
+
+    while (1) {
+		
+		if (current_state == NORMAL_MODE) {
+			
+	        if (count >= 0 && count < 2) {
+	            if (temperature_alert_active) {
+	                toggle_invert_display(true);
+	            } else {
+	                toggle_invert_display(false);
+	            }
+	            print_temp_oled();
+	        } else if (count >= 2 && count < 4) {
+	            if (distance_alert_active) {
+	                toggle_invert_display(true);
+	            } else {
+	                toggle_invert_display(false);
+	            }
+	            print_Water_level_oled();
+	        }
+	
+	        count++;
+	        if (count == 4) {
+	            count = 0; // Reset the counter
+	        }
+        }else if (current_state == CALIBRATION_MODE) {
+			
+			CalibMode_Water_level_oled();
+			
+
+		}
+        
+        
+
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Refresh display every 1 second
+    }
 }
