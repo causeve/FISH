@@ -1,8 +1,8 @@
 #include "oled.h"
 #include "driver/i2c.h"
 #include <string.h>
-#include <main.h>
 #include "esp_log.h"
+#include "main.h"
 #include "temperature.h"
 #include "distance.h"
 
@@ -410,6 +410,17 @@ void CalibMode_Water_level_oled(void)
 	
 }
 
+void WaterFill_mode_oled(void)
+{
+	
+		 ssd1306_clear();
+	ssd1306_draw_scaled_string(5, 0, "Water Filling", 1);
+    ssd1306_draw_scaled_string(10, 10, dist_display, 5);
+    ssd1306_draw_scaled_string(5, 50, "Please wait.", 1);
+    ssd1306_display();
+	
+}
+
 
 void Print_logo_diplay(void)
 {
@@ -533,8 +544,11 @@ void oled_refresh_task(void *pvParameters) {
 			
 			CalibMode_Water_level_oled();
 			
+		}else if (current_state == WATER_FILL_MODE) {
+			
+			WaterFill_mode_oled();
 
-		}
+			}
         
         
 

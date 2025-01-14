@@ -1,3 +1,4 @@
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <math.h>
@@ -9,13 +10,14 @@
 #include "driver/uart.h"
 #include "esp_timer.h"
 #include "freertos/queue.h"
-#include "oled.h"
 #include "main.h"
+#include "oled.h"
 #include "flashnvm.h"
 #include "temperature.h"
 #include "distance.h"
 #include "buzzer.h"
-#define ENABLE_LOGGING 1 // Set to 0 to disable logging
+#include "motor_control.h"
+#define ENABLE_LOGGING 0 // Set to 0 to disable logging
 
 
 
@@ -38,13 +40,19 @@
 // GPIO pins for calibration mode
 #define PUSH_BUTTON GPIO_NUM_33
 
+
 static const char *TAG = "main";
 
 
+typedef enum {
+    STATE_NO_CHANGE,    // No state change
+    STATE_ENTER_WATER_FILL,
+    STATE_EXIT_WATER_FILL
+} StateChangeRequest;
 
+volatile StateChangeRequest state_change_request = STATE_NO_CHANGE;
 
 SystemState current_state ; // Default state
-
 
 
  
@@ -93,6 +101,19 @@ void init_gpio_for_state_machine() {
 }
 
 
+void water_level_low() {
+    if (state_change_request == STATE_NO_CHANGE && current_state != WATER_FILL_MODE) {
+        state_change_request = STATE_ENTER_WATER_FILL;
+        ESP_LOGI("State Machine", "State change requested: Enter WATER_FILL_MODE.");
+    }
+}
+
+void water_level_restored() {
+    if (state_change_request == STATE_NO_CHANGE && current_state == WATER_FILL_MODE) {
+        state_change_request = STATE_EXIT_WATER_FILL;
+        ESP_LOGI("State Machine", "State change requested: Exit WATER_FILL_MODE.");
+    }
+}
 void state_machine_task(void *pvParameters) {
     const uint32_t DEBOUNCE_TIME_MS = 50;       // Debounce time in milliseconds
     const uint32_t LONG_PRESS_THRESHOLD_MS = 2000; // Long press threshold (2 seconds)
@@ -104,57 +125,75 @@ void state_machine_task(void *pvParameters) {
     uint64_t press_duration_ms = 0;     // Press duration in milliseconds
 
     while (1) {
-        // Read the raw button state (active-low: 0 when pressed)
-        bool raw_button_state = gpio_get_level(PUSH_BUTTON);
-
-        // Debounce Logic: Only process state change after stability
-        if (raw_button_state != last_button_state) {
-            vTaskDelay(pdMS_TO_TICKS(DEBOUNCE_TIME_MS)); // Wait for debounce time
-
-            // Re-check the button state after debounce delay
-            if (gpio_get_level(PUSH_BUTTON) == raw_button_state) {
-                last_button_state = raw_button_state; // Update stable state
-
-                if (!last_button_state) { // Button Pressed (active-low: 0)
-                    press_start_tick = esp_timer_get_time(); // Record the press start time
-                } else { // Button Released (active-high: 1)
-                    // Calculate press duration
-                    press_duration_ms = (esp_timer_get_time() - press_start_tick) / 1000; // Convert to ms
-
-                    if (press_duration_ms >= CLEAR_CALIBRATION_THRESHOLD_MS) {
-                        // Clear Calibration Data
-                        clear_calibration_data();
-                        Clear_NVM_Display_oled();
-                         
-                        ESP_LOGI("State", "Button held for 7+ seconds: Calibration data cleared.");
-                        esp_restart(); // Trigger system restart
-                        // Provide feedback via OLED or other mechanism
-                    } else if (press_duration_ms >= LONG_PRESS_THRESHOLD_MS) {
-                        // Long Press: Enter Calibration Mode
-                        if (current_state != CALIBRATION_MODE) {
-                            current_state = CALIBRATION_MODE;
-                            ESP_LOGI("State", "Long press detected: Enter Calibration Mode.");
-                        }
-                    } else {
-                        // Short Press: Confirm Calibration
-                        if (current_state == CALIBRATION_MODE) {
-                            
-                            if (average_distance > BLINDSPOT) {
-                                save_base_distance(average_distance);
-                                save_calibration_status(true);
-                                ESP_LOGI("Calibration", "Calibration complete. Base distance set: %.2f cm", average_distance);
-                                nvm_base_distance = average_distance;
-                                current_state = NORMAL_MODE; // Transition to Normal Mode
-                            } else {
-                                ESP_LOGW("Calibration", "Invalid distance. Retry calibration.");
-                            }
-                        } else {
-                            ESP_LOGW("State", "Short press ignored in Normal Mode.");
-                        }
-                    }
-                }
+		
+		        // Handle state change requests (e.g., from distance_task)
+        if (state_change_request != STATE_NO_CHANGE) {
+            if (state_change_request == STATE_ENTER_WATER_FILL) {
+                ESP_LOGI("State Machine", "Processing state change: Enter WATER_FILL_MODE.");
+                current_state = WATER_FILL_MODE;
+            } else if (state_change_request == STATE_EXIT_WATER_FILL) {
+                ESP_LOGI("State Machine", "Processing state change: Exit WATER_FILL_MODE.");
+                current_state = NORMAL_MODE;
             }
+            state_change_request = STATE_NO_CHANGE; // Reset request
         }
+		
+		if (current_state == NORMAL_MODE || current_state == CALIBRATION_MODE) {
+		        // Read the raw button state (active-low: 0 when pressed)
+		        bool raw_button_state = gpio_get_level(PUSH_BUTTON);
+		
+		        // Debounce Logic: Only process state change after stability
+		        if (raw_button_state != last_button_state) {
+		            vTaskDelay(pdMS_TO_TICKS(DEBOUNCE_TIME_MS)); // Wait for debounce time
+		
+		            // Re-check the button state after debounce delay
+		            if (gpio_get_level(PUSH_BUTTON) == raw_button_state) {
+		                last_button_state = raw_button_state; // Update stable state
+		
+		                if (!last_button_state) { // Button Pressed (active-low: 0)
+		                    press_start_tick = esp_timer_get_time(); // Record the press start time
+		                } else { // Button Released (active-high: 1)
+		                    // Calculate press duration
+		                    press_duration_ms = (esp_timer_get_time() - press_start_tick) / 1000; // Convert to ms
+		
+		                    if (press_duration_ms >= CLEAR_CALIBRATION_THRESHOLD_MS) {
+		                        // Clear Calibration Data
+		                        clear_calibration_data();
+		                        Clear_NVM_Display_oled();
+		                         
+		                        ESP_LOGI("State", "Button held for 7+ seconds: Calibration data cleared.");
+		                        esp_restart(); // Trigger system restart
+		                        // Provide feedback via OLED or other mechanism
+		                    } else if (press_duration_ms >= LONG_PRESS_THRESHOLD_MS) {
+		                        // Long Press: Enter Calibration Mode
+		                        if (current_state != CALIBRATION_MODE) {
+		                            current_state = CALIBRATION_MODE;
+		                            ESP_LOGI("State", "Long press detected: Enter Calibration Mode.");
+		                        }
+		                    } else {
+		                        // Short Press: Confirm Calibration
+		                        if (current_state == CALIBRATION_MODE) {
+		                            
+		                            if (average_distance > BLINDSPOT) {
+		                                save_base_distance(average_distance);
+		                                save_calibration_status(true);
+		                                ESP_LOGI("Calibration", "Calibration complete. Base distance set: %d cm", average_distance);
+		                                nvm_base_distance = average_distance;
+		                                current_state = NORMAL_MODE; // Transition to Normal Mode
+		                            } else {
+		                                ESP_LOGW("Calibration", "Invalid distance. Retry calibration.");
+		                            }
+		                        } else {
+		                            ESP_LOGW("State", "Short press ignored in Normal Mode.");
+		                        }
+		                    }
+		                }
+		            }
+		        }
+        }else if (current_state == WATER_FILL_MODE) {
+          // Add water filling-related logic if necessary
+            ESP_LOGI("State Machine", "In WATER_FILL_MODE. Skipping button operations.");
+		}
 
         vTaskDelay(pdMS_TO_TICKS(10)); // Small delay for efficient polling
     }
@@ -178,6 +217,7 @@ void app_main() {
     init_ultrasonic_gpio();
     init_ds18b20();
     init_buzzer();
+    init_motor_control();
   /*
     oled_draw_string(0, 0, "ENV MONITOR");
     oled_draw_string(0, 16, "TEMP: N/A");
@@ -205,5 +245,6 @@ void app_main() {
     xTaskCreate(buzzer_task, "Buzzer Task", 2048, NULL, 1, NULL);
     xTaskCreate(oled_refresh_task, "OLED Refresh Task", 2048, NULL, 1, NULL);
      xTaskCreate(state_machine_task, "State Machine Task", 2048, NULL, 2, NULL);
+     xTaskCreate(motor_control_task, "motor_control_task", 2048, NULL, 2, NULL);
     
 }

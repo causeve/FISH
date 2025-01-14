@@ -12,12 +12,12 @@
 #define DIST_BUFFER_SIZE 16 
 #define DIST_STATUS_BUFFER_SIZE 16
 
-#define BLINDSPOT 2.0  // 2 cm Blind spot
-#define MAX_DIST_MESUR 100.0  //100cm
+#define BLINDSPOT 2  // 2 cm Blind spot
+#define MAX_DIST_MESUR 100 //100cm
 
-extern float nvm_base_distance ;
+extern int nvm_base_distance ;
 extern volatile bool distance_alert_active;
-extern volatile float average_distance;
+extern volatile int average_distance;
 
  extern char dist_display[DIST_BUFFER_SIZE] ;
  extern char dist_display_status[DIST_STATUS_BUFFER_SIZE];

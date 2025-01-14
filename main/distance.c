@@ -4,6 +4,7 @@
  *  Created on: 09-Jan-2025
  *      Author: ilang
  */
+
 #include "distance.h"
 #include <stdbool.h>
 #include <stdio.h>
@@ -12,27 +13,28 @@
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+ #include "main.h"
 #include <string.h>
-#include <main.h>
-
+#include "motor_control.h"
 //ultrasonic Configuration
 #define TRIG_PIN GPIO_NUM_5
 #define ECHO_PIN GPIO_NUM_18
 #define DISTANCE_BUFFER_SIZE 20
 
+
 static const char *TAG = "distance";
 
 
-float distance_buffer[DISTANCE_BUFFER_SIZE];
+int distance_buffer[DISTANCE_BUFFER_SIZE];
 int buffer_index = 0;
 
 
-float nvm_base_distance = 0.0;
+int nvm_base_distance = 0.0;
 static volatile uint64_t echo_start_time = 0;
 static volatile uint64_t echo_end_time = 0;
 static volatile bool distance_ready  = false;
 
-volatile float average_distance =0.0;
+volatile int average_distance = 0;
 
 
 
@@ -100,22 +102,22 @@ void trigger_ultrasonic() {
 
 
 
-void add_to_buffer(float distance) {
+void add_to_buffer(int distance) {
     distance_buffer[buffer_index] = distance;
     buffer_index = (buffer_index + 1) % DISTANCE_BUFFER_SIZE;
 }
 
-float get_average_distance() {
-    float sum = 0.0;
+int get_average_distance() {
+    int sum = 0;
     for (int i = 0; i < DISTANCE_BUFFER_SIZE; i++) {
         sum += distance_buffer[i];
     }
     return sum / DISTANCE_BUFFER_SIZE;
 }
 
-float validate_distance(float current_distance, float previous_distance) {
-    if (current_distance < 2.0 || current_distance >400.0) {
-        return -1.0; // Invalid range
+int validate_distance(int current_distance, int previous_distance) {
+    if (current_distance < 2 || current_distance >400) {
+        return -1; // Invalid range
     }
     
     /*
@@ -131,7 +133,9 @@ float validate_distance(float current_distance, float previous_distance) {
 void distance_task(void *pvParameters) {
 	
 	
-    float distance = 0.0, previous_distance = 0.0;
+    int distance = 0, previous_distance = 0;
+    static bool low_level_confirmed = false;    // Flag to track low-level confirmation
+    static TickType_t low_level_start_time = 0; // Time when low water level was first detected
 
     // Initialize buffer for averaging
     for (int i = 0; i < DISTANCE_BUFFER_SIZE; i++) {
@@ -149,10 +153,10 @@ void distance_task(void *pvParameters) {
             ESP_LOGW(TAG, "Invalid distance reading!");
             continue; // Skip if invalid
         }
-
+        distance =   (int)(distance + 0.5f);
         // Validate and filter the distance
         distance = validate_distance(distance, previous_distance);
-        if (distance == -1.0) {
+        if (distance == -1) {
 			strncpy(dist_display_status, "FULL", sizeof(dist_display_status));
             strncpy(dist_display, "0", sizeof(dist_display));
             ESP_LOGW(TAG, "Filtered out spurious distance reading!");
@@ -163,34 +167,78 @@ void distance_task(void *pvParameters) {
 
         // Add to buffer and calculate average
         add_to_buffer(distance);
-        float  loc_average_distance = average_distance= get_average_distance();
+        int  loc_average_distance = average_distance= get_average_distance();
         
         // Log and display the distance
-        ESP_LOGI(TAG, "Average Distance: %.2f cm", loc_average_distance);
+        ESP_LOGI(TAG, "Average Distance: %d cm", loc_average_distance);
         
 		if (current_state == NORMAL_MODE) {
 	        // Update display and alert logic
-	        if (loc_average_distance > 0 && loc_average_distance < (nvm_base_distance-1)) {
+	        if (loc_average_distance > 0 && loc_average_distance < (nvm_base_distance)) {
 	            strncpy(dist_display_status, "FULL!!", sizeof(dist_display_status));
 	            strncpy(dist_display, "0", sizeof(dist_display));
 	            distance_alert_active = false;
 	        } else if (loc_average_distance >= BLINDSPOT && loc_average_distance <= MAX_DIST_MESUR) {
-	            snprintf(dist_display, sizeof(dist_display), "%d", (int)(loc_average_distance - nvm_base_distance));
+	            snprintf(dist_display, sizeof(dist_display), "%d", (loc_average_distance - nvm_base_distance));
 	            
 	            if ((int)loc_average_distance > (nvm_base_distance + 5)) {
-	                distance_alert_active = true;
-	                strncpy(dist_display_status, "LOW!!", sizeof(dist_display_status));
+			                distance_alert_active = true;
+			                strncpy(dist_display_status, "LOW!!", sizeof(dist_display_status));
+			                
+			                                // Start 60-second confirmation logic for low water level
+		                if (!low_level_confirmed && low_level_start_time == 0) {
+		                    low_level_start_time = xTaskGetTickCount();
+		                }
+		
+		                // Confirm low level after 60 seconds
+		                if (!low_level_confirmed &&
+		                    (xTaskGetTickCount() - low_level_start_time) * portTICK_PERIOD_MS >= 60000) {
+		                    low_level_confirmed = true; // Confirm low level
+		                    low_level_start_time = 0;  // Reset timer
+		                    water_level_low();        // Notify main.c
+		                    ESP_LOGI(TAG, "Low water level confirmed. Notifying state machine.");
+		                }
+			                
+	                
 	            } else {
+					//if (get_motor_running()== true)
+					//{
+						//distance_alert_active = true;
+					//}else {
 	                distance_alert_active = false;
+	                //}
 	                strncpy(dist_display_status, "GOOD", sizeof(dist_display_status));
+	                
+	
+	                
 	            }
 	        } else {
 	            distance_alert_active = false; // Out of range
 	        }
-         }else if (current_state == CALIBRATION_MODE) {
+         }else if (current_state == CALIBRATION_MODE  ) {
 			 
-			 snprintf(dist_display, sizeof(dist_display), "%d", (int)(loc_average_distance));
+			 snprintf(dist_display, sizeof(dist_display), "%d", (loc_average_distance));
 
+		}
+		else if(current_state == WATER_FILL_MODE)
+		{
+					if (get_motor_running()== true)
+					{
+						distance_alert_active = true;
+					}
+					
+					if(loc_average_distance < (nvm_base_distance))
+					{
+								                                // Reset confirmation logic if water level returns to normal
+		                if (low_level_confirmed || low_level_start_time != 0) {
+		                    low_level_confirmed = false;
+		                    low_level_start_time = 0;
+		                    water_level_restored(); // Notify main.c
+		                    distance_alert_active = false;
+		                    ESP_LOGI(TAG, "Water level restored. Notifying state machine.");
+		                }
+					}
+			snprintf(dist_display, sizeof(dist_display), "%d", (loc_average_distance - nvm_base_distance));
 		}
         vTaskDelay(pdMS_TO_TICKS(100)); // Control update rate
     }

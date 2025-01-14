@@ -43,7 +43,7 @@ void save_base_distance(float base_distance) {
 }
 
 
-float load_base_distance() {
+int load_base_distance() {
     int base_distance_int = -1; // Default value
     nvs_handle_t my_handle;
 
@@ -60,7 +60,7 @@ float load_base_distance() {
         ESP_LOGE("NVS", "Error opening NVS!");
     }
 
-    return (float)base_distance_int; // Convert to float if needed
+    return base_distance_int; // Convert to float if needed
 }
 
 void save_calibration_status(bool is_calibrated) {

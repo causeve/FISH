@@ -6,16 +6,17 @@
  */
 #include "temperature.h"
 #include <ds18x20.h>// For esp-idf-lib
-#include <main.h>
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include <string.h>
 #include "arch/sys_arch.h"
+#include "main.h"
 
 
 // DS18B20 Configuration
 #define DS18B20_GPIO GPIO_NUM_4           // DS18B20 data pin
 #define MAX_SENSORS 1
+
 
 static const char *TAG = "Temperature";
 
@@ -59,8 +60,9 @@ float read_temperature() {
 
 // Temperature Task
 void temperature_task(void *pvParameters) {
-	 int retry_count = 0;
-    const int max_retries = 5; // Limit the number of retries
+//	 int retry_count = 0;
+  //  const int max_retries = 5; // Limit the number of retries
+    // int long_retry_count = 0;
     while (1) {
 		
 		if (current_state == NORMAL_MODE) {
@@ -78,14 +80,21 @@ void temperature_task(void *pvParameters) {
 	            ESP_LOGE(TAG, "Invalid temperature reading!");
 	            strncpy(temp_display, "--", sizeof(temp_display));
 	            strncpy(temp_fractional, ".00", sizeof(temp_fractional));
-	            // Reinitialize DS18B20 if reading fails repeatedly
+/*	            // Reinitialize DS18B20 if reading fails repeatedly
 	            if (retry_count < max_retries) {
                     ESP_LOGE(TAG, "Reinitializing DS18B20 sensor. Retry %d of %d.", retry_count + 1, max_retries);
                     init_ds18b20();
                     retry_count++;
                 } else {
-                    ESP_LOGW(TAG, "Max retries reached. Skipping sensor initialization.");
-                }
+					
+							
+						    if (long_retry_count % 10 == 0) { // Retry every 20 seconds (10 x 2 seconds)
+						        ESP_LOGW(TAG, "Long interval retrying DS18B20 sensor.");
+						        init_ds18b20();
+						    }
+						    long_retry_count++;
+                    
+                }*/
 	        }
         }
 
