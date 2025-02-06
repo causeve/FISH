@@ -8,7 +8,7 @@
 #ifndef MAIN_MAIN_H_
 #define MAIN_MAIN_H_
 
-#define LOGGING_ENABLED 0  // 0-disable 1-enable
+#define LOGGING_ENABLED 1  // 0-disable 1-enable
 
 #if LOGGING_ENABLED == 1
     // Logging is enabled
